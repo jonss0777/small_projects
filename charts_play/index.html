@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIY Sensor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            display: flex;
+            position: relative;
+            justify-content: center;
+            align-items: stretch;
+            flex-direction: column;
+
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        .chart-container {
+            width: 900px;
+            height: 700px;
+            background-color: white;
+            padding: 25px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        #sensor-id {
+            position: relative;
+            width: 600;
+            height: 400;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="chart-container">
+        <h1>Jon DIY Sensor</h1>
+        <canvas id="sensor-id"></canvas>
+    </div>
+    <div>
+        <p>Temperature:</p>
+        <div id="temperature"></div>
+    </div>
+    <div>
+        <p>Humidity:</p>
+        <div id="humidity"></div>
+    </div>
+
+    <script>
+
+        /*
+        TODO: To make the graph mode dynamic. The get request on the AppScript could be used to get the columns and other char config information, 
+        and then create the char object.  
+        */
+
+        // Get a reference to the chart object
+        const ctx = document.getElementById("sensor-id");
+        const temperatureDiv = document.getElementById("temperature");
+        const humidityDiv = document.getElementById("humidity");
+        const myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Temperature', // This is the first dataset
+                        data: [],
+                        borderWidth: 2,
+                        borderColor: 'rgba(255, 99, 132, 1)',  
+                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                        tension: 0.1,
+                        pointRadius: 0,
+                    },
+                    {
+                        label: 'Humidity', // This is the second dataset
+                        data: [],
+                        borderWidth: 2,
+                        borderColor: 'rgba(54, 162, 235, 1)', // Blue color for humidity
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        tension: 0.1,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time' // Consider using the timestamp for this
+                        }
+                    },
+                    y: {
+                        beginAtZero: false, // Set to false so the chart isn't squashed
+                        min: -20, // This sets the minimum value of the y-axis
+                        max: 100, // This sets the maximum value of the y-axis
+                        title: {
+                            display: true,
+                            text: 'Temp °C and Humidity'
+                        }
+                    }
+                }
+            }
+        });
+
+        async function loadData(ENDPOINT, key, payload) {
+            // Variable to hold the result, declared outside the try block
+            let result = null;
+          
+            try {
+                const response = await fetch(ENDPOINT, {
+
+                    method: "POST",
+                    body: JSON.stringify(payload),
+                    // headers: {
+                    //     "Content-Type": "application/json"
+                    // }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Response status: ${response.status}`);
+                }
+
+                result = await response.json();
+
+            } catch (error) {
+                console.error("Failed to fetch data:", error.message);
+                return;
+            }
+
+
+            switch (key) {
+                case "columns":
+                 
+                    //console.log("COLUMNS:", result.columns )
+                    if (result && result.columns) {
+                        for (let index = 1; index < result.columns.length; index++) {
+                          
+                            myChart.data.datasets[index - 1].label = result.columns[index];
+                        }
+                    }
+                    break;
+
+                case "rows":
+            
+                    //console.log("ROWS:", result.rows);
+
+                    if (result && result.rows && Array.isArray(result.rows)) {
+                
+                        for (let i = 0; i < result.rows.length; i++) {
+                            const row = result.rows[i];
+                           
+                            if (Array.isArray(row)) {
+                                for (let j = 0; j < row.length; j++) {
+                                    if (j == 0) {
+                                        const datetime = new Date(row[j]);
+                                        myChart.data.labels.push(`${datetime.getHours()}:${datetime.getMinutes()}:${datetime.getSeconds()}`);
+                                        
+                                        }
+                                    else { myChart.data.datasets[j - 1].data.push(row[j]); }
+                                }
+                            }
+                        }
+
+                        // If the graph is empty this expression will always be false
+                        if (myChart.data.datasets[0].data.length > result.rows.length) {
+                            for (let i = 0; i < result.rows.length; i++) {
+                                myChart.data.labels.shift();
+                                for(let j = 0; j < myChart.data.datasets.length; j++ ){
+                                    console.log(j);
+                                    myChart.data.datasets[j].data.shift();
+                                }
+                            }
+                        }
+
+                        // console.log(myChart.data);
+                        const lastrow = result.rows.length - 1;
+                        const tempCol = 1;
+                        const humidCol = 2;
+                        // console.log("update");
+                        temperatureDiv.innerHTML = result.rows[lastrow][tempCol];
+                        humidityDiv.innerHTML = result.rows[lastrow][humidCol];
+                    }
+
+                    break;
+
+                default:
+                    console.log("key was unrecognized");
+                    break;
+            }
+            myChart.update();
+        }
+
+
+        const ENDPOINT = "URL";
+
+        /*
+            TODO: 
+            request items after most recent timedate;
+        */
+
+        loadData(ENDPOINT, key="columns", {  key:"columns", command: "getData" });
+        loadData(ENDPOINT, key="rows",   {  command:"getData", key: "rows",way: "x", nrows: 600});
+        setInterval(() => {
+            loadData(ENDPOINT, key="rows",{command:"getData", key: "rows", way: "from_to", _from: myChart.data.datasets[0].data[myChart.data.datasets[0].data.length-1]});
+        }, 18000000); 
+
+        
+    </script>
+
+</body>
+
+</html>
